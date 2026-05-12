@@ -1,0 +1,1 @@
+// Role constants: STUDENT, CONTRACTOR, ADMIN, SUPERADMIN

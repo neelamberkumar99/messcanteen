@@ -1,0 +1,73 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "on-primary-fixed-variant": "#004395",
+        "on-background": "#111c2d",
+        "on-tertiary-container": "#fffbff",
+        "error-container": "#ffdad6",
+        "on-tertiary": "#ffffff",
+        "on-secondary-container": "#5c2400",
+        "tertiary": "#6b38d4",
+        "on-secondary-fixed-variant": "#783200",
+        "outline": "#727785",
+        "on-error-container": "#93000a",
+        "background": "#f9f9ff",
+        "tertiary-container": "#8455ef",
+        "on-surface-variant": "#424754",
+        "surface-container-low": "#f0f3ff",
+        "on-tertiary-fixed-variant": "#5516be",
+        "surface-bright": "#f9f9ff",
+        "on-secondary": "#ffffff",
+        "secondary-container": "#fd761a",
+        "surface-container-high": "#dee8ff",
+        "surface-dim": "#cfdaf2",
+        "on-tertiary-fixed": "#23005c",
+        "primary-fixed-dim": "#adc6ff",
+        "on-error": "#ffffff",
+        "primary-fixed": "#d8e2ff",
+        "on-secondary-fixed": "#341100",
+        "on-primary-container": "#fefcff",
+        "primary": "#0058be",
+        "surface-container": "#e7eeff",
+        "tertiary-fixed-dim": "#d0bcff",
+        "secondary-fixed": "#ffdbca",
+        "on-surface": "#111c2d",
+        "secondary-fixed-dim": "#ffb690",
+        "surface-container-lowest": "#ffffff",
+        "on-primary": "#ffffff",
+        "surface-tint": "#005ac2",
+        "inverse-surface": "#263143",
+        "surface-container-highest": "#d8e3fb",
+        "inverse-on-surface": "#ecf1ff",
+        "primary-container": "#2170e4",
+        "on-primary-fixed": "#001a42",
+        "surface-variant": "#d8e3fb",
+        "inverse-primary": "#adc6ff",
+        "tertiary-fixed": "#e9ddff",
+        "secondary": "#9d4300",
+        "outline-variant": "#c2c6d6",
+        "error": "#ba1a1a",
+        "surface": "#f9f9ff"
+      },
+      borderRadius: {
+        "DEFAULT": "0.25rem",
+        "lg": "0.5rem",
+        "xl": "0.75rem",
+        "full": "9999px"
+      },
+      fontFamily: {
+        "headline": ["Manrope", "sans-serif"],
+        "body": ["Inter", "sans-serif"],
+        "label": ["Inter", "sans-serif"]
+      }
+    },
+  },
+  plugins: [],
+}
