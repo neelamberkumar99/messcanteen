@@ -215,8 +215,8 @@ const AdminUsers = () => {
                       </td>
                       <td className="py-7">
                         <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${user.role === 'Vendor' ? 'bg-amber-100 text-amber-700' :
-                            user.role === 'Staff' ? 'bg-blue-100 text-blue-700' :
-                              'bg-primary/10 text-primary'
+                          user.role === 'Staff' ? 'bg-blue-100 text-blue-700' :
+                            'bg-primary/10 text-primary'
                           }`}>
                           {user.role}
                         </span>

@@ -35,15 +35,15 @@ const Login = () => {
   // Demo credentials
   const demoCredentials = {
     student: {
-      email: "neel@student.com",
+      email: "ishita@student.com",
       password: "password123",
     },
     vendor: {
-      email: "vendor@mess.com",
+      email: "vendor_south@mess.com",
       password: "password123",
     },
     admin: {
-      email: "admin@mess.com",
+      email: "admin_south@mess.com",
       password: "password123",
     },
     superadmin: {
