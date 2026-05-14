@@ -17,6 +17,27 @@ const superAdminService = {
     return response;
   },
 
+  // Hostel Management
+  async getHostels(params) {
+    const response = await http.get('/superadmin/hostels', { params });
+    return response;
+  },
+
+  async createHostel(data) {
+    const response = await http.post('/superadmin/hostels', data);
+    return response;
+  },
+
+  async updateHostel(hostelId, data) {
+    const response = await http.put(`/superadmin/hostels/${hostelId}`, data);
+    return response;
+  },
+
+  async deleteHostel(hostelId) {
+    const response = await http.delete(`/superadmin/hostels/${hostelId}`);
+    return response;
+  },
+
   // Audit Logs
   async getAuditLog(params) {
     const response = await http.get('/superadmin/audit-log', { params });

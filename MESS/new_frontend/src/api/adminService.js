@@ -13,10 +13,11 @@ const adminService = {
   },
 
   // Add student
-  async addStudent(name, email, rollNumber, hostelId) {
+  async addStudent(name, email, password, rollNumber, hostelId) {
     const response = await http.post('/admin/students', {
       name,
       email,
+      password,
       rollNumber,
       hostelId,
     });
@@ -44,10 +45,11 @@ const adminService = {
   },
 
   // Add contractor
-  async addContractor(name, email, hostelId) {
+  async addContractor(name, email, password, hostelId) {
     const response = await http.post('/admin/contractors', {
       name,
       email,
+      password,
       hostelId,
     });
     return response;
@@ -68,11 +70,11 @@ const adminService = {
   },
 
   // Add staff member
-  async addStaff(name, email, role, hostelId) {
+  async addStaff(name, email, password, hostelId) {
     const response = await http.post('/admin/staff', {
       name,
       email,
-      role,
+      password,
       hostelId,
     });
     return response;

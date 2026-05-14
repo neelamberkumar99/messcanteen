@@ -124,16 +124,16 @@ const StudentHistory = () => {
                         <span className="font-black text-slate-900 uppercase tracking-tighter text-lg">{row.day}</span>
                       </td>
                       <td className="py-6">
-                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.breakfast?.name || 'N/A'}</p>
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">{row.breakfast?.time || '08:00 AM'}</p>
+                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.meals?.Breakfast || 'N/A'}</p>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">08:00 AM</p>
                       </td>
                       <td className="py-6">
-                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.lunch?.name || 'N/A'}</p>
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">{row.lunch?.time || '01:00 PM'}</p>
+                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.meals?.Lunch || 'N/A'}</p>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">01:00 PM</p>
                       </td>
                       <td className="py-6 pr-4 rounded-r-2xl">
-                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.dinner?.name || 'N/A'}</p>
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">{row.dinner?.time || '08:00 PM'}</p>
+                        <p className="font-bold text-slate-600 group-hover:text-primary transition-colors">{row.meals?.Dinner || 'N/A'}</p>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-1">08:00 PM</p>
                       </td>
                     </tr>
                   ))

@@ -157,12 +157,22 @@ const SuperAdminDashboard = () => {
         <section className="bg-white rounded-[3.5rem] p-12 shadow-sm border border-slate-50">
           <div className="flex justify-between items-center mb-10">
             <h3 className="text-2xl font-bold tracking-tight">Security & Governance Ledger</h3>
-            <button className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">Full Audit Access</button>
+            <button onClick={() => window.location.href='/superadmin/audit'} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:scale-105 transition-transform">Full Audit Access</button>
           </div>
           <div className="space-y-4">
-            <AuditRow time="20:28:15" action="Ecosystem Stat Sync" target="Global-Cluster" status="success" />
-            <AuditRow time="20:25:12" action="Permission Escalation" target="Admin #004" status="warning" />
-            <AuditRow time="20:20:05" action="Bulk Database Index" target="Financial-Replica-1" status="success" />
+            {stats.recentLogs && stats.recentLogs.length > 0 ? (
+              stats.recentLogs.map((log) => (
+                <AuditRow 
+                  key={log._id} 
+                  time={new Date(log.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})} 
+                  action={log.action.replace(/_/g, ' ').toUpperCase()} 
+                  target={log.details || log.resource} 
+                  status={log.status || 'success'} 
+                />
+              ))
+            ) : (
+              <div className="text-center text-slate-400 font-medium py-4">No recent audit logs available.</div>
+            )}
           </div>
         </section>
       </main>
