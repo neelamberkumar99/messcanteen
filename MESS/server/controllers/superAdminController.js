@@ -240,6 +240,9 @@ const getSystemStats = asyncHandler(async (req, res) => {
   // Get pending complaints
   const pendingComplaints = await Complaint.countDocuments({ status: { $in: ['open', 'in-progress'] } });
 
+  // Get recent audit logs
+  const recentLogs = await AuditLog.find().sort({ createdAt: -1 }).limit(5).populate('userId', 'name');
+
   res.json({
     success: true,
     data: {
@@ -249,8 +252,147 @@ const getSystemStats = asyncHandler(async (req, res) => {
       totalBills,
       totalRevenue,
       activeBills,
-      pendingComplaints
+      pendingComplaints,
+      recentLogs
     }
+  });
+});
+
+// Get all hostels
+const getHostels = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, search } = req.query;
+  const skip = (page - 1) * limit;
+
+  const query = {};
+  if (search) {
+    query.name = { $regex: search, $options: 'i' };
+  }
+
+  const hostels = await Hostel.find(query)
+    .skip(skip)
+    .limit(parseInt(limit))
+    .populate('adminId', 'name email')
+    .populate('contractorId', 'name email')
+    .sort({ createdAt: -1 });
+
+  const total = await Hostel.countDocuments(query);
+
+  res.json({
+    success: true,
+    data: hostels,
+    total,
+    page: parseInt(page),
+    pages: Math.ceil(total / limit)
+  });
+});
+
+// Create hostel
+const createHostel = asyncHandler(async (req, res) => {
+  const { name, address, dietCutoffTime, inventoryFreezeTime, minDiets, paymentDueDays } = req.body;
+
+  if (!name) {
+    return res.status(400).json({
+      success: false,
+      message: 'Hostel name is required'
+    });
+  }
+
+  const hostel = new Hostel({
+    name,
+    address,
+    dietCutoffTime,
+    inventoryFreezeTime,
+    minDiets,
+    paymentDueDays
+  });
+
+  await hostel.save();
+
+  // Log action
+  await AuditLog.create({
+    userId: req.user.id,
+    userRole: req.user.role,
+    action: 'created_hostel',
+    resource: 'hostel',
+    resourceId: hostel._id,
+    details: `Created hostel ${name}`,
+    ipAddress: req.ip
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Hostel created successfully',
+    data: hostel
+  });
+});
+
+// Update hostel
+const updateHostel = asyncHandler(async (req, res) => {
+  const { hostelId } = req.params;
+  const updates = req.body;
+
+  // Prevent modifying critical IDs directly via this route if needed
+  // delete updates.adminId;
+  // delete updates.contractorId;
+
+  const hostel = await Hostel.findByIdAndUpdate(
+    hostelId,
+    updates,
+    { new: true, runValidators: true }
+  );
+
+  if (!hostel) {
+    return res.status(404).json({
+      success: false,
+      message: 'Hostel not found'
+    });
+  }
+
+  // Log action
+  await AuditLog.create({
+    userId: req.user.id,
+    userRole: req.user.role,
+    action: 'updated_hostel',
+    resource: 'hostel',
+    resourceId: hostel._id,
+    details: `Updated hostel ${hostel.name}`,
+    ipAddress: req.ip
+  });
+
+  res.json({
+    success: true,
+    message: 'Hostel updated successfully',
+    data: hostel
+  });
+});
+
+// Delete hostel
+const deleteHostel = asyncHandler(async (req, res) => {
+  const { hostelId } = req.params;
+
+  const hostel = await Hostel.findByIdAndDelete(hostelId);
+
+  if (!hostel) {
+    return res.status(404).json({
+      success: false,
+      message: 'Hostel not found'
+    });
+  }
+
+  // Log action
+  await AuditLog.create({
+    userId: req.user.id,
+    userRole: req.user.role,
+    action: 'deleted_hostel',
+    resource: 'hostel',
+    resourceId: hostel._id,
+    details: `Deleted hostel ${hostel.name}`,
+    ipAddress: req.ip
+  });
+
+  res.json({
+    success: true,
+    message: 'Hostel deleted successfully'
   });
 });
 
@@ -260,5 +402,9 @@ module.exports = {
   deactivateAdmin,
   getAuditLog,
   publishAnnouncement,
-  getSystemStats
+  getSystemStats,
+  getHostels,
+  createHostel,
+  updateHostel,
+  deleteHostel
 };

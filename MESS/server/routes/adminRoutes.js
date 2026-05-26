@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const verifyToken = require('../middlewares/auth');
-const { isAdminOrAbove } = require('../middlewares/roleGuard');
+const { isAdminOrAbove, isContractorOrAbove } = require('../middlewares/roleGuard');
 const adminController = require('../controllers/adminController');
 const { getHostelById } = require('../controllers/adminController');
 
 router.get('/hostel/:id', verifyToken, isAdminOrAbove, getHostelById);
 
 router.get('/students', verifyToken, isAdminOrAbove, adminController.getStudents);
-router.get('/stats', verifyToken, isAdminOrAbove, adminController.getStats);
+router.get('/stats', verifyToken, isContractorOrAbove, adminController.getStats);
 router.post('/students', verifyToken, isAdminOrAbove, adminController.addStudent);
 router.put('/students/:id', verifyToken, isAdminOrAbove, adminController.updateStudent);
 router.put('/students/:id/deactivate', verifyToken, isAdminOrAbove, adminController.deactivateStudent);
@@ -39,7 +39,7 @@ router.put('/staff/:id', verifyToken, isAdminOrAbove, adminController.updateStaf
 router.put('/settings/diet-rules', verifyToken, isAdminOrAbove, adminController.setDietRules);
 
 // Notification operations used by admin panel
-router.get('/notifications', verifyToken, isAdminOrAbove, adminController.getNotificationLog);
+router.get('/notifications', verifyToken, isContractorOrAbove, adminController.getNotificationLog);
 router.post('/notifications/bulk', verifyToken, isAdminOrAbove, adminController.sendBulkNotification);
 router.post('/notifications/payment-reminder', verifyToken, isAdminOrAbove, adminController.triggerPaymentReminder);
 router.post('/notifications/due-alert', verifyToken, isAdminOrAbove, adminController.triggerDueAlert);

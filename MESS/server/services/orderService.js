@@ -233,6 +233,7 @@ const getAllOrders = async (filters = {}) => {
   if (filters.status) query.status = filters.status;
   if (filters.contractorId) query.contractorId = filters.contractorId;
   if (filters.studentId) query.studentId = filters.studentId;
+  if (filters.studentIds) query.studentId = { $in: filters.studentIds };
 
   const [orders, total] = await Promise.all([
     Order.find(query)

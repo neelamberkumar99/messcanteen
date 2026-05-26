@@ -5,7 +5,7 @@ const { isContractorOrAbove } = require('../middlewares/roleGuard');
 const canteenController = require('../controllers/canteenController');
 
 // Public route - students can fetch available items
-router.get('/available', canteenController.getAvailableItems);
+router.get('/available', verifyToken, canteenController.getAvailableItems);
 
 // Contractor gets all their items
 router.get('/all', verifyToken, isContractorOrAbove, canteenController.getAllItems);

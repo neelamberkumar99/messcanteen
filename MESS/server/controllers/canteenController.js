@@ -43,6 +43,7 @@ const addItem = asyncHandler(async (req, res) => {
 
   const item = await CanteenItem.create({
     contractorId,
+    hostelId: hostel._id,
     name,
     price,
     category,
@@ -198,16 +199,20 @@ const setAvailability = asyncHandler(async (req, res) => {
 
 const getAvailableItems = asyncHandler(async (req, res) => {
   const { start } = getTodayRange();
-  const items = await CanteenItem.find({ isAvailable: true })
+  // Filter by user's hostelId
+  const hostelId = req.user.hostelId || req.user.profile?.hostelId;
+  if (!hostelId) return res.status(400).json({ success: false, message: 'Hostel context missing' });
+
+  const items = await CanteenItem.find({ isAvailable: true, hostelId })
     .sort({ category: 1, name: 1 });
   res.json({ success: true, items, date: start });
 });
 
 const getAllItems = asyncHandler(async (req, res) => {
-  const contractorId = req.user.id;
-  const role = req.user.role;
-  const query = role === 'contractor' ? { contractorId } : {};
-  const items = await CanteenItem.find(query).sort({ category: 1, name: 1 });
+  const hostelId = req.user.hostelId || req.user.profile?.hostelId;
+  if (!hostelId) return res.status(400).json({ success: false, message: 'Hostel context missing' });
+
+  const items = await CanteenItem.find({ hostelId }).sort({ category: 1, name: 1 });
   res.json({ success: true, items });
 });
 
@@ -215,25 +220,44 @@ const getDietPlan = asyncHandler(async (req, res) => {
   const contractorId = req.user.id;
   const hostel = await Hostel.findOne({ contractorId });
   if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found for this contractor' });
+
+  const students = await Student.find({ hostelId: hostel._id, isActive: { $ne: false } }).select('_id dietStatus');
+  const baseHeadcount = students.filter(s => s.dietStatus !== false).length;
+
   res.json({ 
     success: true, 
     dietPlan: hostel.dietPlan || { schedule: [] },
+    plan: hostel.dietPlan || { schedule: [] }, // For frontend compatibility
     hostel: {
       _id: hostel._id,
       name: hostel.name,
-      dietComponents: hostel.dietComponents
+      dietComponents: hostel.dietComponents,
+      dietPricePerDay: hostel.dietPricePerDay,
+      dietCutoffTime: hostel.dietCutoffTime,
+      typicalHeadcount: baseHeadcount
     }
   });
 });
 
 const updateDietPlan = asyncHandler(async (req, res) => {
   const contractorId = req.user.id;
-  const { title, schedule } = req.body;
+  const { title, schedule, dietComponents, dietPricePerDay, dietCutoffTime } = req.body;
 
   const hostel = await Hostel.findOne({ contractorId });
   if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found' });
 
-  hostel.dietPlan = { title, schedule };
+  if (title || schedule) {
+    hostel.dietPlan = { 
+      title: title || hostel.dietPlan?.title || 'Weekly Plan', 
+      schedule: schedule || hostel.dietPlan?.schedule || [] 
+    };
+    hostel.markModified('dietPlan');
+  }
+
+  if (dietComponents) hostel.dietComponents = dietComponents;
+  if (typeof dietPricePerDay !== 'undefined') hostel.dietPricePerDay = dietPricePerDay;
+  if (dietCutoffTime) hostel.dietCutoffTime = dietCutoffTime;
+
   await hostel.save();
 
   await auditService.logAction({
@@ -242,7 +266,7 @@ const updateDietPlan = asyncHandler(async (req, res) => {
     action: 'UPDATE_DIET_PLAN',
     resource: 'Hostel',
     resourceId: hostel._id,
-    details: `Updated diet plan: ${title}`,
+    details: `Updated diet plan and rules: ${title || 'Shared Update'}`,
     ipAddress: req.ip
   });
 
@@ -250,13 +274,16 @@ const updateDietPlan = asyncHandler(async (req, res) => {
   try {
     const io = req.app.get('io');
     if (io) {
-      io.to(`hostel:${hostel._id}`).emit('menu:update', { action: 'update', dietPlan: hostel.dietPlan, hostelId: hostel._id });
+      io.to(`hostel:${hostel._id}`).emit('menu:update', { 
+        action: 'update', 
+        dietPlan: hostel.dietPlan, 
+        dietComponents: hostel.dietComponents,
+        hostelId: hostel._id 
+      });
     }
-  } catch (err) {
-    // ignore socket errors
-  }
+  } catch (err) {}
 
-  res.json({ success: true, dietPlan: hostel.dietPlan });
+  res.json({ success: true, dietPlan: hostel.dietPlan, hostel });
 });
 
 const getComplaints = asyncHandler(async (req, res) => {
@@ -338,25 +365,39 @@ const createContractorRequest = asyncHandler(async (req, res) => {
 
 const searchStudents = asyncHandler(async (req, res) => {
   const search = (req.query.search || '').trim();
-  if (!search) return res.json({ success: true, students: [] });
+  const contractorId = req.user.id;
 
-  const matchedUsers = await User.find({
-    role: 'student',
-    $or: [
-      { name: new RegExp(search, 'i') },
-      { email: new RegExp(search, 'i') }
-    ]
-  }).select('_id');
-  
-  const userIds = matchedUsers.map(u => u._id);
+  // Find the hostel for this contractor to filter students
+  const hostel = await Hostel.findOne({ contractorId });
+  if (!hostel) return res.json({ success: true, students: [] });
 
-  const students = await Student.find({
-    $or: [
-      { userId: { $in: userIds } },
-      { rollNumber: new RegExp(search, 'i') },
-      { roomNumber: new RegExp(search, 'i') }
-    ]
-  }).populate('userId', 'name email role');
+  let students;
+  if (!search) {
+    // If no search, return all students in this hostel
+    students = await Student.find({ hostelId: hostel._id })
+      .populate('userId', 'name email role isActive')
+      .sort({ 'userId.name': 1 });
+  } else {
+    // Search with query
+    const matchedUsers = await User.find({
+      role: 'student',
+      $or: [
+        { name: new RegExp(search, 'i') },
+        { email: new RegExp(search, 'i') }
+      ]
+    }).select('_id');
+    
+    const userIds = matchedUsers.map(u => u._id);
+
+    students = await Student.find({
+      hostelId: hostel._id,
+      $or: [
+        { userId: { $in: userIds } },
+        { rollNumber: new RegExp(search, 'i') },
+        { roomNumber: new RegExp(search, 'i') }
+      ]
+    }).populate('userId', 'name email role isActive');
+  }
 
   res.json({ success: true, students });
 });

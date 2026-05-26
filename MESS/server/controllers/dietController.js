@@ -224,9 +224,18 @@ const getDietPlan = asyncHandler(async (req, res) => {
 
   const enriched = schedule.map(day => {
     const meals = {};
-    (hostel.dietComponents || []).forEach(comp => {
-      meals[comp.name] = (day.meals instanceof Map ? day.meals.get(comp.name) : day.meals?.[comp.name]) || 'N/A';
-    });
+    // Handle both legacy format (direct properties like breakfast, lunch) and new format (meals Map)
+    if (day.meals) {
+      // New format: meals is a Map or object
+      (hostel.dietComponents || []).forEach(comp => {
+        meals[comp.name] = (day.meals instanceof Map ? day.meals.get(comp.name) : day.meals?.[comp.name]) || 'N/A';
+      });
+    } else {
+      // Legacy format: meal names directly on day object
+      (hostel.dietComponents || []).forEach(comp => {
+        meals[comp.name] = day[comp.name] || 'N/A';
+      });
+    }
     return {
       day: day.day,
       meals

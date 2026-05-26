@@ -18,7 +18,10 @@ const getFineRules = asyncHandler(async (req, res) => {
 });
 
 const setFineRules = asyncHandler(async (req, res) => {
-  const { hostelId, adminId, slabs, effectiveFrom } = req.body;
+  const adminId = req.user.id;
+  const hostelId = req.user.hostelId || req.user.profile?.hostelId || req.body.hostelId;
+  const { slabs, effectiveFrom } = req.body;
+  
   if (!hostelId || !adminId || !Array.isArray(slabs)) return res.status(400).json({ success: false, message: 'hostelId, adminId and slabs required' });
   const rule = new FineRule({ hostelId, adminId, slabs, effectiveFrom: effectiveFrom ? new Date(effectiveFrom) : new Date() });
   await rule.save();

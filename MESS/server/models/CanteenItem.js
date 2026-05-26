@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const CanteenItemSchema = new mongoose.Schema({
   contractorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  hostelId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hostel', required: true },
   name: { type: String, required: true, trim: true },
   price: { type: Number, required: true, min: 0 },
   category: { type: String, trim: true },

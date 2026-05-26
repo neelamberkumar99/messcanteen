@@ -1,17 +1,19 @@
 /**
  * Database Seed Script for Mess ERP
  * Populates the database with initial data for all roles and modules.
+ * Demonstrates full multi-tenancy with 2 distinct Hostels.
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./models/User');
 const Hostel = require('./models/Hostel');
+const Student = require('./models/Student');
 const CanteenItem = require('./models/CanteenItem');
 const Order = require('./models/Order');
 const Complaint = require('./models/Complaint');
 const Bill = require('./models/Bill');
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mess_erp';
 
 const seedDatabase = async () => {
   try {
@@ -24,6 +26,7 @@ const seedDatabase = async () => {
     await Promise.all([
       User.deleteMany({}),
       Hostel.deleteMany({}),
+      Student.deleteMany({}),
       CanteenItem.deleteMany({}),
       Order.deleteMany({}),
       Complaint.deleteMany({}),
@@ -39,141 +42,227 @@ const seedDatabase = async () => {
       role: 'superadmin'
     });
 
-    // 3. Create Admin
-    console.log('Seeding Admin...');
-    const admin = await User.create({
-      name: 'Hostel Admin',
-      email: 'admin@mess.com',
+    // ---------------------------------------------------------
+    // TENANT 1: NORTH BLOCK RESIDENCY
+    // ---------------------------------------------------------
+    console.log('Seeding Tenant 1: North Block Residency...');
+    
+    const adminNorth = await User.create({
+      name: 'North Admin',
+      email: 'admin_north@mess.com',
       password: 'password123',
       role: 'admin'
     });
 
-    // 4. Create Contractor (Vendor)
-    console.log('Seeding Contractor...');
-    const contractor = await User.create({
-      name: 'Culinary Arts Vendor',
-      email: 'vendor@mess.com',
+    const vendorNorth = await User.create({
+      name: 'North Vendor',
+      email: 'vendor_north@mess.com',
       password: 'password123',
       role: 'contractor'
     });
 
-    // 5. Create Hostel
-    console.log('Seeding Hostel & Diet Plan...');
-    const hostel = await Hostel.create({
+    const hostelNorth = await Hostel.create({
       name: 'North Block Residency',
       address: 'University Campus, Gate 4',
-      adminId: admin._id,
-      contractorId: contractor._id,
+      adminId: adminNorth._id,
+      contractorId: vendorNorth._id,
       dietCutoffTime: '22:00',
       inventoryFreezeTime: '08:00',
       dietPricePerDay: 150,
+      dietComponents: [
+        { name: 'Breakfast', price: 50, includeInDiet: true, isActive: true, time: '08:00' },
+        { name: 'Lunch', price: 50, includeInDiet: true, isActive: true, time: '12:30' },
+        { name: 'Dinner', price: 50, includeInDiet: true, isActive: true, time: '19:30' }
+      ],
       paymentMethod: {
         provider: 'upi',
-        upiId: 'mess@upi',
-        accountName: 'Hostel Mess Fund'
+        upiId: 'northmess@upi',
+        accountName: 'North Hostel Mess Fund'
       },
       dietPlan: {
-        title: 'Premium Weekly Menu',
+        title: 'North Weekly Menu',
         schedule: [
-          { day: 'Monday', breakfast: 'Stuffed Paratha & Curd', lunch: 'Rajma Chawal & Salad', dinner: 'Mix Veg & Roti' },
-          { day: 'Tuesday', breakfast: 'Poha & Sprouts', lunch: 'Kadahi Paneer & Naan', dinner: 'Aloo Gobi & Roti' },
-          { day: 'Wednesday', breakfast: 'Idli Sambar', lunch: 'Veg Biryani & Raita', dinner: 'Dal Tadka & Rice' },
-          { day: 'Thursday', breakfast: 'Aloo Poori', lunch: 'Chole Bhature', dinner: 'Seasonal Veg & Roti' },
-          { day: 'Friday', breakfast: 'Bread Omelette / Cutlet', lunch: 'Kadi Chawal', dinner: 'Mutter Paneer & Roti' },
-          { day: 'Saturday', breakfast: 'Pav Bhaji', lunch: 'Dal Baati Churma', dinner: 'Veg Pulao & Curd' },
-          { day: 'Sunday', breakfast: 'Pancakes / Chole Bhature', lunch: 'Special Thali', dinner: 'Light Khichdi' }
+          { day: 'Monday', meals: { Breakfast: 'Stuffed Paratha', Lunch: 'Rajma Chawal', Dinner: 'Mix Veg' } },
+          { day: 'Tuesday', meals: { Breakfast: 'Poha', Lunch: 'Kadahi Paneer', Dinner: 'Aloo Gobi' } },
+          { day: 'Wednesday', meals: { Breakfast: 'Idli Sambar', Lunch: 'Veg Biryani', Dinner: 'Dal Tadka' } },
+          { day: 'Thursday', meals: { Breakfast: 'Aloo Poori', Lunch: 'Chole Bhature', Dinner: 'Seasonal Veg' } },
+          { day: 'Friday', meals: { Breakfast: 'Bread Omelette', Lunch: 'Kadi Chawal', Dinner: 'Mutter Paneer' } },
+          { day: 'Saturday', meals: { Breakfast: 'Pav Bhaji', Lunch: 'Dal Baati Churma', Dinner: 'Veg Pulao' } },
+          { day: 'Sunday', meals: { Breakfast: 'Pancakes', Lunch: 'Special Thali', Dinner: 'Light Khichdi' } }
         ]
       }
     });
 
-    // Link Admin and Contractor to Hostel
-    await User.findByIdAndUpdate(admin._id, { hostelId: hostel._id });
-    await User.findByIdAndUpdate(contractor._id, { hostelId: hostel._id });
+    // Link North Admin and North Vendor to North Hostel
+    await User.findByIdAndUpdate(adminNorth._id, { hostelId: hostelNorth._id });
+    await User.findByIdAndUpdate(vendorNorth._id, { hostelId: hostelNorth._id });
 
-    // 6. Create Students
-    console.log('Seeding Students...');
-    const students = await Promise.all([
-      User.create({ name: 'Neel Kumar', email: 'neel@student.com', password: 'password123', role: 'student', hostelId: hostel._id }),
-      User.create({ name: 'Aditya Singh', email: 'aditya@student.com', password: 'password123', role: 'student', hostelId: hostel._id }),
-      User.create({ name: 'Ishita Roy', email: 'ishita@student.com', password: 'password123', role: 'student', hostelId: hostel._id })
+    // Create North Students
+    const userNeel = await User.create({ name: 'Neel Kumar', email: 'neel@student.com', password: 'password123', role: 'student', hostelId: hostelNorth._id });
+    const userAditya = await User.create({ name: 'Aditya Singh', email: 'aditya@student.com', password: 'password123', role: 'student', hostelId: hostelNorth._id });
+
+    const studentNeel = await Student.create({ userId: userNeel._id, rollNumber: 'N101', roomNumber: '101A', hostelId: hostelNorth._id });
+    const studentAditya = await Student.create({ userId: userAditya._id, rollNumber: 'N102', roomNumber: '102B', hostelId: hostelNorth._id });
+
+    // North Canteen Items
+    const northItems = await CanteenItem.insertMany([
+      { contractorId: vendorNorth._id, hostelId: hostelNorth._id, name: 'North Pizza', price: 199, category: 'Main Course', imageUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400', isAvailable: true },
+      { contractorId: vendorNorth._id, hostelId: hostelNorth._id, name: 'North Cold Coffee', price: 60, category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=400', isAvailable: true }
     ]);
 
-    // 7. Create Canteen Items
-    console.log('Seeding Canteen Items...');
-    const canteenItems = await CanteenItem.insertMany([
-      { contractorId: contractor._id, name: 'Double Cheese Pizza', price: 199, category: 'Main Course', imageUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Spiced Paneer Wrap', price: 89, category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Classic Cold Coffee', price: 60, category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Veg Hakka Noodles', price: 120, category: 'Main Course', imageUrl: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Chocolate Lava Cake', price: 75, category: 'Desserts', imageUrl: 'https://images.unsplash.com/photo-1624353365286-3f8d62daad51?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Masala Dosa', price: 110, category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Crispy French Fries', price: 70, category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400', isAvailable: true },
-      { contractorId: contractor._id, name: 'Fresh Fruit Juice', price: 50, category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400', isAvailable: true }
-    ]);
-
-    // 8. Create Mock Orders for Neel
-    console.log('Seeding Mock Orders...');
+    // North Orders
     await Order.create({
-      studentId: students[0]._id,
+      studentId: studentNeel._id,
+      contractorId: vendorNorth._id,
       items: [
-        { itemId: canteenItems[0]._id, name: canteenItems[0].name, price: canteenItems[0].price, quantity: 1 },
-        { itemId: canteenItems[2]._id, name: canteenItems[2].name, price: canteenItems[2].price, quantity: 1 }
+        { itemId: northItems[0]._id, price: northItems[0].price, quantity: 1 },
+        { itemId: northItems[1]._id, price: northItems[1].price, quantity: 1 }
       ],
-      total: 259,
-      status: 'fulfilled',
-      paymentStatus: 'paid'
+      totalAmount: 259,
+      status: 'approved'
     });
 
-    await Order.create({
-      studentId: students[0]._id,
-      items: [{ itemId: canteenItems[1]._id, name: canteenItems[1].name, price: canteenItems[1].price, quantity: 1 }],
-      total: 89,
-      status: 'pending',
-      paymentStatus: 'pending'
-    });
-
-    // 9. Create Mock Complaints
-    console.log('Seeding Mock Complaints...');
+    // North Complaints
     await Complaint.create({
-      studentId: students[0]._id,
-      title: 'Water Quality Issue',
+      studentId: studentAditya._id,
+      title: 'Water Quality Issue in North',
       description: 'The water purifier on the 2nd floor is not working properly.',
-      category: 'Maintenance',
+      category: 'service',
+      status: 'open'
+    });
+
+
+    // ---------------------------------------------------------
+    // TENANT 2: SOUTH BLOCK RESIDENCY
+    // ---------------------------------------------------------
+    console.log('Seeding Tenant 2: South Block Residency...');
+    
+    const adminSouth = await User.create({
+      name: 'South Admin',
+      email: 'admin_south@mess.com',
+      password: 'password123',
+      role: 'admin'
+    });
+
+    const vendorSouth = await User.create({
+      name: 'South Vendor',
+      email: 'vendor_south@mess.com',
+      password: 'password123',
+      role: 'contractor'
+    });
+
+    const hostelSouth = await Hostel.create({
+      name: 'South Block Residency',
+      address: 'University Campus, Gate 8',
+      adminId: adminSouth._id,
+      contractorId: vendorSouth._id,
+      dietCutoffTime: '21:00',
+      inventoryFreezeTime: '07:30',
+      dietPricePerDay: 160,
+      dietComponents: [
+        { name: 'Breakfast', price: 60, includeInDiet: true, isActive: true, time: '08:00' },
+        { name: 'Lunch', price: 50, includeInDiet: true, isActive: true, time: '12:30' },
+        { name: 'Dinner', price: 50, includeInDiet: true, isActive: true, time: '19:30' }
+      ],
+      paymentMethod: {
+        provider: 'upi',
+        upiId: 'southmess@upi',
+        accountName: 'South Hostel Mess Fund'
+      },
+      dietPlan: {
+        title: 'South Weekly Menu',
+        schedule: [
+          { day: 'Monday', meals: { Breakfast: 'Dosa', Lunch: 'Sambar Rice', Dinner: 'Rasam' } },
+          { day: 'Tuesday', meals: { Breakfast: 'Upma', Lunch: 'Lemon Rice', Dinner: 'Chapati' } },
+          { day: 'Wednesday', meals: { Breakfast: 'Pongal', Lunch: 'Curd Rice', Dinner: 'Idli' } },
+          { day: 'Thursday', meals: { Breakfast: 'Puri', Lunch: 'Bisi Bele Bath', Dinner: 'Dosa' } },
+          { day: 'Friday', meals: { Breakfast: 'Vada', Lunch: 'Tomato Rice', Dinner: 'Uthappam' } },
+          { day: 'Saturday', meals: { Breakfast: 'Appam', Lunch: 'Avial', Dinner: 'Kerala Parotta' } },
+          { day: 'Sunday', meals: { Breakfast: 'Puttu', Lunch: 'South Special Thali', Dinner: 'Idiyappam' } }
+        ]
+      }
+    });
+
+    // Link South Admin and South Vendor to South Hostel
+    await User.findByIdAndUpdate(adminSouth._id, { hostelId: hostelSouth._id });
+    await User.findByIdAndUpdate(vendorSouth._id, { hostelId: hostelSouth._id });
+
+    // Create South Students
+    const userIshita = await User.create({ name: 'Ishita Roy', email: 'ishita@student.com', password: 'password123', role: 'student', hostelId: hostelSouth._id });
+    const userRahul = await User.create({ name: 'Rahul Dev', email: 'rahul@student.com', password: 'password123', role: 'student', hostelId: hostelSouth._id });
+
+    const studentIshita = await Student.create({ userId: userIshita._id, rollNumber: 'S201', roomNumber: '201A', hostelId: hostelSouth._id });
+    const studentRahul = await Student.create({ userId: userRahul._id, rollNumber: 'S202', roomNumber: '202B', hostelId: hostelSouth._id });
+
+    // South Canteen Items
+    const southItems = await CanteenItem.insertMany([
+      { contractorId: vendorSouth._id, hostelId: hostelSouth._id, name: 'South Burger', price: 99, category: 'Snacks', imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400', isAvailable: true },
+      { contractorId: vendorSouth._id, hostelId: hostelSouth._id, name: 'South Fresh Juice', price: 50, category: 'Beverages', imageUrl: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400', isAvailable: true }
+    ]);
+
+    // South Orders
+    await Order.create({
+      studentId: studentIshita._id,
+      contractorId: vendorSouth._id,
+      items: [
+        { itemId: southItems[0]._id, price: southItems[0].price, quantity: 2 }
+      ],
+      totalAmount: 198,
       status: 'pending'
     });
 
+    // South Complaints
     await Complaint.create({
-      studentId: students[1]._id,
-      title: 'Food Quality',
-      description: 'The dinner yesterday was slightly undercooked.',
-      category: 'Food',
-      status: 'resolved',
-      resolution: 'Chef notified and extra quality checks implemented.'
+      studentId: studentRahul._id,
+      title: 'AC not working in South',
+      description: 'The dining hall AC is broken.',
+      category: 'service',
+      status: 'open'
     });
 
-    // 10. Create Initial Bill for Current Month
+
+    // ---------------------------------------------------------
+    // Create Initial Bills
+    // ---------------------------------------------------------
     console.log('Seeding Initial Bills...');
-    const currentMonth = new Date().getMonth();
+    const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     
     await Bill.create({
-      studentId: students[0]._id,
+      studentId: studentNeel._id,
       month: currentMonth,
       year: currentYear,
       dietCharges: 4500, // 30 days * 150
-      canteenCharges: 348,
-      totalDue: 4848,
+      canteenCharges: 259,
+      totalDue: 4759,
+      status: 'unpaid'
+    });
+
+    await Bill.create({
+      studentId: studentIshita._id,
+      month: currentMonth,
+      year: currentYear,
+      dietCharges: 4800, // 30 days * 160
+      canteenCharges: 198,
+      totalDue: 4998,
       status: 'unpaid'
     });
 
     console.log('-------------------------------------------');
-    console.log('DATABASE SEEDED SUCCESSFULLY!');
+    console.log('DATABASE SEEDED SUCCESSFULLY WITH MULTI-TENANCY!');
     console.log('-------------------------------------------');
     console.log('Use these credentials to login:');
     console.log('SuperAdmin: superadmin@mess.com / password123');
-    console.log('Admin:      admin@mess.com / password123');
-    console.log('Vendor:     vendor@mess.com / password123');
+    console.log('');
+    console.log('-- NORTH HOSTEL --');
+    console.log('Admin:      admin_north@mess.com / password123');
+    console.log('Vendor:     vendor_north@mess.com / password123');
     console.log('Student:    neel@student.com / password123');
+    console.log('');
+    console.log('-- SOUTH HOSTEL --');
+    console.log('Admin:      admin_south@mess.com / password123');
+    console.log('Vendor:     vendor_south@mess.com / password123');
+    console.log('Student:    ishita@student.com / password123');
     console.log('-------------------------------------------');
 
     process.exit(0);

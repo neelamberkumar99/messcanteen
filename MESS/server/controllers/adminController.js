@@ -15,6 +15,11 @@ const { generateMonthlyBill, updateFinesForOverdueBills } = require('../services
 const { getActiveDietDays } = require('../utils/dietUtils');
 const auditService = require('../services/auditService');
 
+const normalizeOptionalObjectId = (value) => {
+  if (value === '' || value === null || typeof value === 'undefined') return undefined;
+  return value;
+};
+
 const getDefaultHostel = async (adminId) => {
   const hostel = await Hostel.findOne({ adminId });
   return hostel || null;
@@ -28,7 +33,7 @@ const getStudents = asyncHandler(async (req, res) => {
   const roomNumber = (req.query.roomNumber || '').trim();
   const dietStatus = req.query.dietStatus;
 
-  const studentQuery = {};
+  const studentQuery = { hostelId: req.user.hostelId };
   if (roomNumber) studentQuery.roomNumber = new RegExp(roomNumber, 'i');
   if (typeof dietStatus !== 'undefined' && dietStatus !== '') {
     studentQuery.dietStatus = dietStatus === 'true';
@@ -83,50 +88,68 @@ const getStudents = asyncHandler(async (req, res) => {
 });
 
 const getStats = asyncHandler(async (req, res) => {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const ist = new Date(now.getTime() + istOffset);
-  const today = new Date(ist.getFullYear(), ist.getMonth(), ist.getDate());
-
-  // Identify hostel
-  let hostelId = req.query.hostelId || req.user.profile?.hostelId || req.user.hostelId;
+  // Identify hostel — supports both admin and contractor (vendor) roles
+  const profileHostelId = req.user.profile?.hostelId;
+  let hostelId = req.query.hostelId
+    || (profileHostelId ? String(profileHostelId) : null)
+    || req.user.hostelId;
   let hostel = null;
 
   if (hostelId) {
-    hostel = await Hostel.findById(hostelId);
+    hostel = await Hostel.findById(hostelId).catch(() => null);
+  }
+
+  // Fallback: find hostel by adminId or contractorId
+  if (!hostel) {
+    const userId = req.user.profile?._id || req.user.id;
+    hostel = await Hostel.findOne({ adminId: userId })
+          || await Hostel.findOne({ contractorId: userId });
   }
 
   if (!hostel) {
-    hostel = await Hostel.findOne({ adminId: req.user.id }) || await Hostel.findOne({ contractorId: req.user.id });
-  }
-
-  if (!hostel) {
-    return res.json({ 
-      success: true, 
-      stats: { totalStudents: 0, totalDietOn: 0, mealStats: {}, activeDiets: 0 } 
+    return res.json({
+      success: true,
+      stats: { totalStudents: 0, totalDietOn: 0, mealStats: {}, activeDiets: 0 }
     });
   }
 
-  const [hostelStudents, pendingComplaints, unpaidBillsArr] = await Promise.all([
-    Student.find({ hostelId: hostel._id, isActive: { $ne: false } }),
-    Complaint.countDocuments({ status: 'open' }),
-    Bill.find({ status: { $ne: 'paid' } }) // Ideally filter this too if needed
+  // Date Normalization (IST focus)
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istNow = new Date(utc + (330 * 60000)); // UTC+5.5
+  const today = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const dayAfter = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
+
+  const hostelStudents = await Student.find({ hostelId: hostel._id, isActive: { $ne: false } }).populate('userId', 'isActive hostelId name email');
+  const studentIdsAll = hostelStudents.map(s => s._id);
+
+  const [pendingComplaints, unpaidBillsArr] = await Promise.all([
+    Complaint.countDocuments({ status: 'open', studentId: { $in: studentIdsAll } }),
+    Bill.find({ status: { $ne: 'paid' }, studentId: { $in: studentIdsAll } })
   ]);
 
-  const studentIds = hostelStudents.map(s => s._id);
+  const activeHostelStudents = hostelStudents.filter((student) => student.isActive !== false && student.userId?.isActive !== false);
+
+  const studentIds = activeHostelStudents.map(s => s._id);
   const dietLogs = await DietLog.find({ 
     studentId: { $in: studentIds },
     date: { $gte: today, $lt: new Date(today.getTime() + 24*60*60*1000) } 
   });
+
+  const isStudentDietOn = (student, log) => {
+    if (log) return log.isActive !== false;
+    return student.dietStatus !== false;
+  };
   
   const mealStats = {};
   if (hostel && hostel.dietComponents) {
     hostel.dietComponents.forEach(comp => {
       if (comp.isActive === false) return;
       let activeForMeal = 0;
-      hostelStudents.forEach(s => {
+      activeHostelStudents.forEach(s => {
         const log = dietLogs.find(l => String(l.studentId) === String(s._id));
-        const isGlobalOff = log ? !log.isActive : !s.dietStatus;
+        const isGlobalOff = !isStudentDietOn(s, log);
         const isMealOff = log?.mealsOff?.includes(comp.name);
         if (!isGlobalOff && !isMealOff) activeForMeal++;
       });
@@ -134,17 +157,19 @@ const getStats = asyncHandler(async (req, res) => {
     });
   }
 
-  const tomorrow = new Date(today.getTime() + 24*60*60*1000);
-  const dietLogsTomorrow = await DietLog.find({ date: { $gte: tomorrow, $lt: new Date(tomorrow.getTime() + 24*60*60*1000) } });
+  const dietLogsTomorrow = await DietLog.find({ 
+    studentId: { $in: studentIds },
+    date: { $gte: tomorrow, $lt: dayAfter } 
+  });
 
   const mealStatsTomorrow = {};
   if (hostel && hostel.dietComponents) {
     hostel.dietComponents.forEach(comp => {
       if (comp.isActive === false) return;
       let activeForMeal = 0;
-      hostelStudents.forEach(s => {
+      activeHostelStudents.forEach(s => {
         const log = dietLogsTomorrow.find(l => String(l.studentId) === String(s._id));
-        const isGlobalOff = log ? !log.isActive : !s.dietStatus;
+        const isGlobalOff = !isStudentDietOn(s, log);
         const isMealOff = log?.mealsOff?.includes(comp.name);
         if (!isGlobalOff && !isMealOff) activeForMeal++;
       });
@@ -154,21 +179,20 @@ const getStats = asyncHandler(async (req, res) => {
 
   // Calculate Global ON (Total - Global Off today)
   let totalDietOn = 0;
-  hostelStudents.forEach(s => {
+  activeHostelStudents.forEach(s => {
     const log = dietLogs.find(l => String(l.studentId) === String(s._id));
-    const isGlobalOff = log ? !log.isActive : !s.dietStatus;
-    if (!isGlobalOff) totalDietOn++;
+    if (isStudentDietOn(s, log)) totalDietOn++;
   });
 
   res.json({ 
     success: true, 
     hostel,
     stats: {
-      totalStudents: hostelStudents.length,
+      totalStudents: activeHostelStudents.length,
       totalDietOn,
       pendingComplaints,
       unpaidBills: unpaidBillsArr.length,
-      activeDiets: Object.values(mealStats).reduce((a, b) => Math.max(a, b), 0),
+      activeDiets: totalDietOn,
       mealStats,
       mealStatsTomorrow,
       dietCutoff: hostel?.dietCutoffTime,
@@ -179,21 +203,25 @@ const getStats = asyncHandler(async (req, res) => {
 
 const addStudent = asyncHandler(async (req, res) => {
   const { name, email, password, rollNumber, roomNumber, hostelId } = req.body;
+  const normalizedHostelId = normalizeOptionalObjectId(hostelId);
+  // Force hostelId to be the admin's hostelId for strict isolation
+  const finalHostelId = req.user.role === 'admin' ? req.user.hostelId : normalizedHostelId;
+  
   if (!name || !email || !password || !rollNumber) {
     return res.status(400).json({ success: false, message: 'name, email, password and rollNumber are required' });
   }
 
   // Validate hostel exists
-  if (hostelId) {
-    const hostel = await Hostel.findById(hostelId);
+  if (finalHostelId) {
+    const hostel = await Hostel.findById(finalHostelId);
     if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found' });
   }
 
   const existing = await User.findOne({ email });
   if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
 
-  const user = await User.create({ name, email, password, role: 'student', hostelId });
-  const student = await Student.create({ userId: user._id, rollNumber, roomNumber, hostelId });
+  const user = await User.create({ name, email, password, role: 'student', hostelId: finalHostelId });
+  const student = await Student.create({ userId: user._id, rollNumber, roomNumber, hostelId: finalHostelId });
 
   await auditService.logAction({
     userId: req.user.id,
@@ -222,8 +250,9 @@ const updateStudent = asyncHandler(async (req, res) => {
   if (typeof email !== 'undefined') user.email = email;
   if (typeof password !== 'undefined' && password) user.password = password;
   if (typeof hostelId !== 'undefined') {
-    user.hostelId = hostelId;
-    student.hostelId = hostelId;
+    const finalHostelId = req.user.role === 'admin' ? req.user.hostelId : hostelId;
+    user.hostelId = finalHostelId;
+    student.hostelId = finalHostelId;
   }
   if (typeof rollNumber !== 'undefined') student.rollNumber = rollNumber;
   if (typeof roomNumber !== 'undefined') student.roomNumber = roomNumber;
@@ -257,22 +286,31 @@ const deactivateStudent = asyncHandler(async (req, res) => {
 });
 
 const getContractors = asyncHandler(async (req, res) => {
-  const contractors = await User.find({ role: 'contractor' }).sort({ createdAt: -1 }).select('-password');
+  const contractors = await User.find({ role: 'contractor', hostelId: req.user.hostelId }).sort({ createdAt: -1 }).select('-password');
   res.json({ success: true, contractors });
 });
 
 const addContractor = asyncHandler(async (req, res) => {
   const { name, email, password, hostelId } = req.body;
+  const normalizedHostelId = normalizeOptionalObjectId(hostelId);
   if (!name || !email || !password) {
     return res.status(400).json({ success: false, message: 'name, email and password are required' });
   }
+  // Force hostelId to be the admin's hostelId for strict isolation
+  const finalHostelId = req.user.role === 'admin' ? req.user.hostelId : normalizedHostelId;
+  
+  if (finalHostelId) {
+    const hostel = await Hostel.findById(finalHostelId);
+    if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found' });
+  }
+
   const existing = await User.findOne({ email });
   if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
 
-  const user = await User.create({ name, email, password, role: 'contractor', hostelId });
+  const user = await User.create({ name, email, password, role: 'contractor', hostelId: finalHostelId });
   
-  if (hostelId) {
-    await Hostel.findByIdAndUpdate(hostelId, { contractorId: user._id });
+  if (finalHostelId) {
+    await Hostel.findByIdAndUpdate(finalHostelId, { contractorId: user._id });
   }
 
   res.status(201).json({ success: true, user: await User.findById(user._id).select('-password') });
@@ -287,9 +325,10 @@ const updateContractor = asyncHandler(async (req, res) => {
   if (typeof email !== 'undefined') user.email = email;
   if (typeof password !== 'undefined' && password) user.password = password;
   if (typeof hostelId !== 'undefined') {
-    user.hostelId = hostelId;
-    if (hostelId) {
-      await Hostel.findByIdAndUpdate(hostelId, { contractorId: user._id });
+    const finalHostelId = req.user.role === 'admin' ? req.user.hostelId : hostelId;
+    user.hostelId = finalHostelId;
+    if (finalHostelId) {
+      await Hostel.findByIdAndUpdate(finalHostelId, { contractorId: user._id });
     }
   }
   if (typeof isActive !== 'undefined') user.isActive = isActive;
@@ -298,19 +337,28 @@ const updateContractor = asyncHandler(async (req, res) => {
 });
 
 const getStaff = asyncHandler(async (req, res) => {
-  const staff = await User.find({ role: 'staff' }).sort({ createdAt: -1 }).select('-password');
+  const staff = await User.find({ role: 'staff', hostelId: req.user.hostelId }).sort({ createdAt: -1 }).select('-password');
   res.json({ success: true, staff });
 });
 
 const addStaff = asyncHandler(async (req, res) => {
   const { name, email, password, hostelId } = req.body;
+  const normalizedHostelId = normalizeOptionalObjectId(hostelId);
   if (!name || !email || !password) {
     return res.status(400).json({ success: false, message: 'name, email and password are required' });
   }
+  // Force hostelId to be the admin's hostelId for strict isolation
+  const finalHostelId = req.user.role === 'admin' ? req.user.hostelId : normalizedHostelId;
+
+  if (finalHostelId) {
+    const hostel = await Hostel.findById(finalHostelId);
+    if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found' });
+  }
+
   const existing = await User.findOne({ email });
   if (existing) return res.status(400).json({ success: false, message: 'Email already exists' });
 
-  const user = await User.create({ name, email, password, role: 'staff', hostelId });
+  const user = await User.create({ name, email, password, role: 'staff', hostelId: finalHostelId });
   
   await auditService.logAction({
     userId: req.user.id,
@@ -333,7 +381,9 @@ const updateStaff = asyncHandler(async (req, res) => {
   if (typeof name !== 'undefined') user.name = name;
   if (typeof email !== 'undefined') user.email = email;
   if (typeof password !== 'undefined' && password) user.password = password;
-  if (typeof hostelId !== 'undefined') user.hostelId = hostelId;
+  if (typeof hostelId !== 'undefined') {
+    user.hostelId = req.user.role === 'admin' ? req.user.hostelId : hostelId;
+  }
   if (typeof isActive !== 'undefined') user.isActive = isActive;
   await user.save();
 
@@ -351,15 +401,15 @@ const updateStaff = asyncHandler(async (req, res) => {
 });
 
 const setDietRules = asyncHandler(async (req, res) => {
-  const { hostelId, dietCutoffTime, minDiets, dietPlan, dietComponents } = req.body;
-  if (!hostelId) return res.status(400).json({ success: false, message: 'hostelId is required' });
+  const { hostelId, dietCutoffTime, minDiets, dietPlan, dietComponents, dietPricePerDay } = req.body;
   
   // Admins may only update their own hostel
   let finalHostelId = hostelId;
   if (req.user.role === 'admin') {
-    const userHostelId = req.user.hostelId || req.user.profile?.hostelId;
-    if (userHostelId) finalHostelId = userHostelId;
+    finalHostelId = req.user.hostelId || req.user.profile?.hostelId;
   }
+
+  if (!finalHostelId) return res.status(400).json({ success: false, message: 'hostelId is required' });
 
   const hostel = await Hostel.findById(finalHostelId);
   if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found' });
@@ -371,17 +421,22 @@ const setDietRules = asyncHandler(async (req, res) => {
   if (typeof minDiets !== 'undefined') {
     hostel.minDiets = Number(minDiets);
   }
+
+  if (typeof dietPricePerDay !== 'undefined') {
+    hostel.dietPricePerDay = Number(dietPricePerDay);
+  }
   
   if (dietComponents && Array.isArray(dietComponents)) {
     hostel.dietComponents = dietComponents;
   }
 
   if (typeof dietPlan !== 'undefined') {
-    // If dietPlan is provided, update it. Expecting { title, schedule }
+    if (!hostel.dietPlan) hostel.dietPlan = { title: 'Weekly Plan', schedule: [] };
     if (dietPlan.title) hostel.dietPlan.title = dietPlan.title;
     if (dietPlan.schedule && Array.isArray(dietPlan.schedule)) {
       hostel.dietPlan.schedule = dietPlan.schedule;
     }
+    hostel.markModified('dietPlan');
   }
 
   await hostel.save();
@@ -396,12 +451,25 @@ const setDietRules = asyncHandler(async (req, res) => {
     ipAddress: req.ip
   });
 
+  // Emit socket event for real-time sync across all roles
+  try {
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`hostel:${hostel._id}`).emit('menu:update', { 
+        action: 'update', 
+        dietPlan: hostel.dietPlan, 
+        dietComponents: hostel.dietComponents,
+        hostelId: hostel._id 
+      });
+    }
+  } catch (err) {}
+
   res.json({ success: true, hostel });
 });
 
 const setPaymentDueDays = asyncHandler(async (req, res) => {
-  const adminId = req.user.id;
-  const hostel = await getDefaultHostel(adminId);
+  const hostelId = req.user.hostelId || req.user.profile?.hostelId;
+  const hostel = await Hostel.findById(hostelId);
   if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found for admin' });
   const { paymentDueDays } = req.body;
   hostel.paymentDueDays = paymentDueDays;
@@ -410,8 +478,8 @@ const setPaymentDueDays = asyncHandler(async (req, res) => {
 });
 
 const setPaymentMethod = asyncHandler(async (req, res) => {
-  const adminId = req.user.id;
-  const hostel = await getDefaultHostel(adminId);
+  const hostelId = req.user.hostelId || req.user.profile?.hostelId;
+  const hostel = await Hostel.findById(hostelId);
   if (!hostel) return res.status(404).json({ success: false, message: 'Hostel not found for admin' });
   const { provider, upiId, gatewayName, accountName, accountNumber, ifsc, active } = req.body;
   hostel.paymentMethod = {
@@ -545,7 +613,7 @@ const sendBulkNotification = asyncHandler(async (req, res) => {
   if (!title || !message) {
     return res.status(400).json({ success: false, message: 'title and message are required' });
   }
-  const students = await User.find({ role: 'student', isActive: true }).select('_id');
+  const students = await User.find({ role: 'student', isActive: true, hostelId: req.user.hostelId }).select('_id');
   const notifications = await Notification.insertMany(students.map((student) => ({
     userId: student._id,
     title,
@@ -556,7 +624,10 @@ const sendBulkNotification = asyncHandler(async (req, res) => {
 });
 
 const triggerPaymentReminder = asyncHandler(async (req, res) => {
-  const bills = await Bill.find({ status: { $ne: 'paid' } }).populate({ path: 'studentId', populate: { path: 'userId', select: 'name email' } });
+  const students = await Student.find({ hostelId: req.user.hostelId }).select('_id');
+  const studentIds = students.map(s => s._id);
+
+  const bills = await Bill.find({ status: { $ne: 'paid' }, studentId: { $in: studentIds } }).populate({ path: 'studentId', populate: { path: 'userId', select: 'name email' } });
   const notifications = await Notification.insertMany(bills.map((bill) => ({
     userId: bill.studentId.userId._id,
     title: 'Payment reminder',
@@ -568,7 +639,10 @@ const triggerPaymentReminder = asyncHandler(async (req, res) => {
 
 const triggerDueAlert = asyncHandler(async (req, res) => {
   const now = new Date();
-  const bills = await Bill.find({ status: { $ne: 'paid' }, dueDate: { $lt: now } }).populate({ path: 'studentId', populate: { path: 'userId', select: 'name email' } });
+  const students = await Student.find({ hostelId: req.user.hostelId }).select('_id');
+  const studentIds = students.map(s => s._id);
+
+  const bills = await Bill.find({ status: { $ne: 'paid' }, dueDate: { $lt: now }, studentId: { $in: studentIds } }).populate({ path: 'studentId', populate: { path: 'userId', select: 'name email' } });
   const notifications = await Notification.insertMany(bills.map((bill) => ({
     userId: bill.studentId.userId._id,
     title: 'Bill due alert',
@@ -607,7 +681,10 @@ const getHostelById = asyncHandler(async (req, res) => {
 });
 
 const getContractorRequests = asyncHandler(async (req, res) => {
-  const requests = await ContractorRequest.find()
+  const contractors = await User.find({ role: 'contractor', hostelId: req.user.hostelId }).select('_id');
+  const contractorIds = contractors.map(c => c._id);
+  
+  const requests = await ContractorRequest.find({ contractorId: { $in: contractorIds } })
     .populate('contractorId', 'name email')
     .sort({ createdAt: -1 });
   res.json({ success: true, requests });
@@ -652,9 +729,12 @@ const getComplaints = asyncHandler(async (req, res) => {
   const page = Math.max(1, Number(req.query.page || 1));
   const limit = Math.min(100, Math.max(1, Number(req.query.limit || 10)));
   const skip = (page - 1) * limit;
-  const status = req.query.status; // optional filter
+  const status = req.query.status;
 
-  const query = {};
+  const students = await Student.find({ hostelId: req.user.hostelId }).select('_id');
+  const studentIds = students.map(s => s._id);
+
+  const query = { studentId: { $in: studentIds } };
   if (status && ['open', 'inprogress', 'resolved'].includes(status)) {
     query.status = status;
   }

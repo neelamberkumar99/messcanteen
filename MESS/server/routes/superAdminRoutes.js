@@ -8,7 +8,11 @@ const {
   deactivateAdmin,
   getAuditLog,
   publishAnnouncement,
-  getSystemStats
+  getSystemStats,
+  getHostels,
+  createHostel,
+  updateHostel,
+  deleteHostel
 } = require('../controllers/superAdminController');
 
 // All routes require superadmin role
@@ -19,6 +23,12 @@ router.use(isSuperAdmin);
 router.get('/admins', getAdmins);
 router.post('/admins', createAdmin);
 router.put('/admins/:adminId/deactivate', deactivateAdmin);
+
+// Hostel management
+router.get('/hostels', getHostels);
+router.post('/hostels', createHostel);
+router.put('/hostels/:hostelId', updateHostel);
+router.delete('/hostels/:hostelId', deleteHostel);
 
 // Audit log
 router.get('/audit-log', getAuditLog);

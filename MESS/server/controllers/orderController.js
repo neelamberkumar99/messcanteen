@@ -234,7 +234,12 @@ const getContractorOrderSummary = asyncHandler(async (req, res) => {
 });
 
 const getAllOrders = asyncHandler(async (req, res) => {
-  const data = await orderService.getAllOrders(req.query);
+  const Student = require('../models/Student');
+  const students = await Student.find({ hostelId: req.user.hostelId }).select('_id');
+  const studentIds = students.map(s => s._id);
+
+  const filters = { ...req.query, studentIds };
+  const data = await orderService.getAllOrders(filters);
   res.json({ success: true, ...data });
 });
 
